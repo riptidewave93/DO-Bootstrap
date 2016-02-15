@@ -11,15 +11,15 @@ export IMAGETYPE="RAWTARGZ"
 ####################################################################
 
 # Set kernel/initramfs to use for boot
-export KERNEL="https://gitlab.chrisrblake.com/riptide_wave/DO-Bootstrap/raw/master/kernel-3.16.0-4-amd64"
-export INITRD="https://gitlab.chrisrblake.com/riptide_wave/DO-Bootstrap/raw/master/output/initrd.img-3.16.0-4-amd64.modified"
+export KERNEL="https://github.com/riptidewave93/DO-Bootstrap/releases/download/v0.1/kernel-3.16.0-4-amd64"
+export INITRD="https://github.com/riptidewave93/DO-Bootstrap/releases/download/v0.1/initrd.img-3.16.0-4-amd64.modified"
 
 # Sleep so networking can come up
 sleep 10
 
 # Download Kernel & Initramfs
-curl -o /usr/share/oem/deb-kernel $KERNEL
-curl -o /usr/share/oem/deb-initrd.img $INITRD
+curl -Lo /usr/share/oem/deb-kernel $KERNEL
+curl -Lo /usr/share/oem/deb-initrd.img $INITRD
 
 # Backup stock custom included grub config
 mv /usr/share/oem/grub.cfg /usr/share/oem/grub.cfg.bak
