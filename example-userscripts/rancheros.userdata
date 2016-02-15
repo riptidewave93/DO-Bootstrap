@@ -1,0 +1,69 @@
+#!/bin/sh
+
+# URL to Image you want to have installed to /dev/vda. Supports FTP/HTTP/HTTPS.
+export IMAGEURL="http://releases.rancher.com/os/latest/rancheros-v0.4.2.tar.gz"
+
+# Set Options
+export IMAGETYPE="RAWTARGZ"
+
+####################################################################
+# Do not change below this line unless you know what you are doing #
+####################################################################
+
+# Set kernel/initramfs to use for boot
+export KERNEL="https://gitlab.chrisrblake.com/riptide_wave/DO-Bootstrap/raw/master/kernel-3.16.0-4-amd64"
+export INITRD="https://gitlab.chrisrblake.com/riptide_wave/DO-Bootstrap/raw/master/output/initrd.img-3.16.0-4-amd64.modified"
+
+# Sleep so networking can come up
+sleep 10
+
+# Download Kernel & Initramfs
+curl -o /usr/share/oem/deb-kernel $KERNEL
+curl -o /usr/share/oem/deb-initrd.img $INITRD
+
+# Backup stock custom included grub config
+mv /usr/share/oem/grub.cfg /usr/share/oem/grub.cfg.bak
+
+# Add our Menu Entry
+cat <<EOT >>/usr/share/oem/grub.cfg
+default="bootstrap"
+menuentry "DO-Bootstrap" --id=bootstrap {
+    linux (hd0,gpt6)/deb-kernel
+    initrd (hd0,gpt6)/deb-initrd.img
+}
+EOT
+
+# Save our options to the bootstrap script
+cat <<EOT >>/usr/share/oem/do-bootstrap.sh
+#!/bin/sh
+export IMAGEURL=$IMAGEURL
+export IMAGETYPE=$IMAGETYPE
+EOT
+chmod +x /usr/share/oem/do-bootstrap.sh
+
+# Save any custom script needed to customize the image for DO
+cat <<EOT >>/usr/share/oem/do-postrun.sh
+#!/bin/sh
+
+echo "DO-Bootstrap: Applying RancherOS specific tweaks..."
+
+# Update disks
+sync
+partprobe
+
+# Mount the boot partition so we can edit GRUB so the image works with DO
+mount /dev/vda1 /mnt
+
+# Add password of "rancher" as well as DO as datasource for droplet
+sed -i 's/console=tty0/console=tty0 rancher.password=rancher/g' /mnt/boot/grub/grub.cfg
+sed -i 's/console=tty0/console=tty0 rancher.password=rancher/g' /mnt/boot/grub/menu.lst
+
+# Unmount disk, and boot
+sync
+umount /mnt
+exit 0
+EOT
+chmod +x /usr/share/oem/do-postrun.sh
+
+# And let's boot it!
+reboot

@@ -1,0 +1,84 @@
+#!/bin/sh
+
+# URL to Image you want to have installed to /dev/vda. FTP or HTTP ONLY!
+export IMAGEURL="http://downloads.openwrt.org/chaos_calmer/15.05/x86/64/openwrt-15.05-x86-64-combined-ext4.img.gz"
+
+# Set Options
+export IMAGETYPE="RAWGZ"
+
+####################################################################
+# Do not change below this line unless you know what you are doing #
+####################################################################
+
+# Set kernel/initramfs to use for boot
+export KERNEL="https://gitlab.chrisrblake.com/riptide_wave/DO-Bootstrap/raw/master/kernel-3.16.0-4-amd64"
+export INITRD="https://gitlab.chrisrblake.com/riptide_wave/DO-Bootstrap/raw/master/output/initrd.img-3.16.0-4-amd64.modified"
+
+# Sleep so networking can come up
+sleep 10
+
+# Download Kernel & Initramfs
+curl -o /usr/share/oem/deb-kernel $KERNEL
+curl -o /usr/share/oem/deb-initrd.img $INITRD
+
+# Backup stock custom included grub config
+mv /usr/share/oem/grub.cfg /usr/share/oem/grub.cfg.bak
+
+# Add our Menu Entry
+cat <<EOT >>/usr/share/oem/grub.cfg
+default="bootstrap"
+menuentry "DO-Bootstrap" --id=bootstrap {
+    linux (hd0,gpt6)/deb-kernel
+    initrd (hd0,gpt6)/deb-initrd.img
+}
+EOT
+
+# Save our options to the bootstrap script
+cat <<EOT >>/usr/share/oem/do-bootstrap.sh
+#!/bin/sh
+export IMAGEURL=$IMAGEURL
+export IMAGETYPE=$IMAGETYPE
+EOT
+chmod +x /usr/share/oem/do-bootstrap.sh
+
+# Save any custom script needed to customize the image for DO
+cat <<EOT >>/usr/share/oem/do-postrun.sh
+#!/bin/sh
+
+echo "DO-Bootstrap: Applying OpenWRT specific tweaks..."
+
+# Pull down our hostname
+export DOHOSTNAME=`wget -qO- http://169.254.169.254/metadata/v1/hostname`
+
+# Update disks
+sync
+partprobe
+
+# Mount the rootfs
+mount /dev/vda2 /mnt
+
+# Apply Network config, and Hostname
+sed -i "s/OpenWrt/\$DOHOSTNAME/g" /mnt/etc/config/system
+sed -i "/option type/c\	option dns	'8.8.8.8 8.8.4.4'" /mnt/etc/config/network
+sed -i "s/192.168.1.1/\$DOIP/g" /mnt/etc/config/network
+sed -i "s/255.255.255.0/\$DONETMASK/g" /mnt/etc/config/network
+sed -i "/option ip6assign/c\	option gateway	\$DOGATEWAY" /mnt/etc/config/network
+
+# Add SSH Keys
+wget -q http://169.254.169.254/metadata/v1/public-keys -O /mnt/etc/dropbear/authorized_keys
+
+# disable LuCI
+rm /mnt/etc/rc.d/S50uhttpd
+
+# Disable SSH passwordless login (as we have SSH keys)
+sed -i "s/'on'/'off'/g" /mnt/etc/config/dropbear
+
+# Unmount disk, and boot
+sync
+umount /mnt
+exit 0
+EOT
+chmod +x /usr/share/oem/do-postrun.sh
+
+# And let's boot it!
+reboot

@@ -1,0 +1,175 @@
+#!/bin/sh
+
+# DO-Bootstap script
+# By Chris Blake (chrisrblake93 <at> gmail.com)
+#
+
+flash_complete() {
+	if [ -f "/tmp/do-postrun.sh" ]; then
+		echo "DO-Bootstrap: Running do-postrun.sh..."
+		/tmp/do-postrun.sh
+	fi
+	# We done now
+	echo "DO-Bootstrap: Flashing Complete!"
+	sync
+	sleep 5
+	reboot -f
+}
+
+exit_shell() {
+	/bin/sh -i </dev/console >/dev/console 2>&1
+}
+
+echo "DO-Bootstrap: Enabling Networking..."
+
+# Enable int and set link-local
+ifconfig lo 127.0.0.1 up
+ifconfig eth0 169.254.169.222 netmask 255.255.0.0 up
+
+# Pull down networking configuration
+export DOIP=`wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address`
+export DONETMASK=`wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/netmask`
+export DOGATEWAY=`wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/gateway`
+
+# Now re-enable with the new information
+ifconfig eth0 down
+ifconfig eth0 ${DOIP} netmask ${DONETMASK} up
+route add default gw ${DOGATEWAY}
+
+echo "DO-Bootstrap: Mounting /oem..."
+# Time to mount the /oem partition to get the image/URL we are flashing
+mkdir /mnt
+mount -t ext4 /dev/vda6 /mnt
+
+# Pull down the files from the disk as needed
+if [ -f "/mnt/do-bootstrap.sh" ]; then
+	source /mnt/do-bootstrap.sh
+else
+	echo "DO-Bootstrap: do-bootstrap.sh not found, exiting to shell..."
+	exit_shell
+fi
+
+if [ -f "/mnt/do-postrun.sh" ]; then
+	echo "DO-Bootstrap: do-postrun.sh found, will run after prevision!"
+	cp /mnt/do-postrun.sh /tmp/do-postrun.sh
+	chmod 755 /tmp/do-postrun.sh
+else
+	echo "DO-Bootstrap: do-postrun.sh not found."
+fi
+
+# We are done with /dev/vda6, unmount
+umount /mnt
+
+# What are we installing?
+if [ -z "${IMAGETYPE}" ]; then
+	echo "DO-Bootstrap: IMAGETYPE not defined, assuming RAW."
+	IMAGETYPE="RAW"
+fi
+
+# Let's Do this
+echo "DO-Bootstrap: Starting Flashing process..."
+
+# We need this for a progress bar
+IMGLENGTH=`wget "${IMAGEURL}" --spider --server-response -O - 2>&1 | sed -ne '/Content-Length/{s/.*: //;p}'`
+
+# Let's start the flashing
+case "${IMAGETYPE}" in
+	RAW)
+		echo "DO-Bootstrap: Flashing RAW Image..."
+		parted -s /dev/vda mklabel msdos # "Wipe Disk"
+		wget -qO- "${IMAGEURL}" | pv | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWGZ)
+		echo "DO-Bootstrap: Flashing RAW GZ Image..."
+		parted -s /dev/vda mklabel msdos # "Wipe Disk"
+		wget -qO- "${IMAGEURL}" | pv | gunzip -c | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWTARGZ)
+		echo "DO-Bootstrap: Flashing RAW TAR GZ Image..."
+		parted -s /dev/vda mklabel msdos # "Wipe Disk"
+		wget -qO- "${IMAGEURL}" | pv | tar -xzf - -O | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWXZ)
+		echo "DO-Bootstrap: Flashing RAW XZ Image..."
+		parted -s /dev/vda mklabel msdos # "Wipe Disk"
+		wget -qO- "${IMAGEURL}" | pv | unxz -c | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	VHD)
+		echo "DO-Bootstrap: Flashing VHD Image..."
+		# If we are using a VHD, we need to partition the disk into 2x blocks, one for the vhd, one for the raw. If the img is too big, then we can't do the flash
+		DISKSIZE=`fdisk -l /dev/vda | head -2 | awk '{ print $5 }'`
+		NEEDEDSPACE=`expr $IMGLENGTH \* 2`
+
+		# Can we store it?
+		if [ "${DISKSIZE}" -lt "${NEEDEDSPACE}" ]; then
+			echo "DO-Bootstrap: ERROR: Not enough space on /dev/vda to store, we need ${NEEDEDSPACE} bytes to flash this VHD, and your disk only has ${DISKSIZE}";
+			exit_shell
+		fi
+
+		# Make new MBR and partitions
+		parted -s /dev/vda mklabel msdos
+		parted -s /dev/vda mkpart primary 0% 50%
+		parted -s /dev/vda mkpart primary 51% 100%
+		partprobe
+
+		# Format 2nd FS as ext4 so we can store our VHD on it
+		mkfs.ext4 /dev/vda2
+		sync
+
+		# Mount 2nd fs, and start the DL
+		mount /dev/vda2 /mnt
+		wget -qO- "${IMAGEURL}" | pv | dd of=/mnt/img.vhd
+
+		# Img is done, make sure our partition for this is big enough...
+		VHDIMGSIZE=`qemu-img info /mnt/img.vhd | grep "virtual size" | awk '{ print $4 }' | sed -e "s/(//g"`
+
+		# Can we store it?
+		if [ "${DISKSIZE}" -lt "${VHDIMGSIZE}" ]; then
+			echo "DO-Bootstrap: ERROR: Not enough space on /dev/vda to store, we need ${VHDIMGSIZE} bytes to flash this VHD, and your disk only has ${DISKSIZE}";
+			exit_shell
+		fi
+
+		# Convert and save to disk
+		qemu-img convert -f vpc -O raw /mnt/img.vhd /dev/vda
+
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	*)
+		echo "DO-Bootstrap: Something went really wrong, exiting!"
+		exit_shell
+		;;
+esac
