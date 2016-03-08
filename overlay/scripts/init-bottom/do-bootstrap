@@ -122,6 +122,18 @@ case "${IMAGETYPE}" in
 			exit_shell
 		fi
 		;;
+	RAWTARXZ)
+		echo "DO-Bootstrap: Flashing RAW TAR XZ Image..."
+		parted -s /dev/vda mklabel msdos # "Wipe Disk"
+		wget -qO- "${IMAGEURL}" | pv | tar -xJf - -O | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
 	VHD)
 		echo "DO-Bootstrap: Flashing VHD Image..."
 		# If we are using a VHD, we need to partition the disk into 2x blocks, one for the vhd, one for the raw. If the img is too big, then we can't do the flash
