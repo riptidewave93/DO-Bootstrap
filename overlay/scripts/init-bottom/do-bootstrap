@@ -20,6 +20,10 @@ exit_shell() {
 	/bin/sh -i </dev/console >/dev/console 2>&1
 }
 
+# Start by changing the log level, and clearing all previous output
+echo 1 > /proc/sys/kernel/printk
+clear
+
 echo "DO-Bootstrap: Enabling Networking..."
 
 # Enable int and set link-local
@@ -126,6 +130,18 @@ case "${IMAGETYPE}" in
 		echo "DO-Bootstrap: Flashing RAW TAR XZ Image..."
 		parted -s /dev/vda mklabel msdos # "Wipe Disk"
 		wget -qO- "${IMAGEURL}" | pv | tar -xJf - -O | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWBZ2)
+		echo "DO-Bootstrap: Flashing RAW BZ2 Image..."
+		parted -s /dev/vda mklabel msdos # "Wipe Disk"
+		wget -qO- "${IMAGEURL}" | pv | bzip2 -dc - | dd of=/dev/vda
 		# Did we crash?
 		if [ $? -eq 0 ]; then
 			flash_complete
