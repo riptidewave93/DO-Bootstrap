@@ -81,7 +81,7 @@ case "${IMAGETYPE}" in
 	RAW)
 		echo "DO-Bootstrap: Flashing RAW Image..."
 		parted -s /dev/vda mklabel msdos # "Wipe Disk"
-		wget -qO- "${IMAGEURL}" | pv | dd of=/dev/vda
+		curl -s -k -L "${IMAGEURL}" | pv | dd of=/dev/vda
 		# Did we crash?
 		if [ $? -eq 0 ]; then
 			flash_complete
@@ -93,7 +93,7 @@ case "${IMAGETYPE}" in
 	RAWGZ)
 		echo "DO-Bootstrap: Flashing RAW GZ Image..."
 		parted -s /dev/vda mklabel msdos # "Wipe Disk"
-		wget -qO- "${IMAGEURL}" | pv | gunzip -c | dd of=/dev/vda
+		curl -s -k -L "${IMAGEURL}" | pv | gunzip -c | dd of=/dev/vda
 		# Did we crash?
 		if [ $? -eq 0 ]; then
 			flash_complete
@@ -105,7 +105,7 @@ case "${IMAGETYPE}" in
 	RAWTARGZ)
 		echo "DO-Bootstrap: Flashing RAW TAR GZ Image..."
 		parted -s /dev/vda mklabel msdos # "Wipe Disk"
-		wget -qO- "${IMAGEURL}" | pv | tar -xzf - -O | dd of=/dev/vda
+		curl -s -k -L "${IMAGEURL}" | pv | tar -xzf - -O | dd of=/dev/vda
 		# Did we crash?
 		if [ $? -eq 0 ]; then
 			flash_complete
@@ -117,7 +117,7 @@ case "${IMAGETYPE}" in
 	RAWXZ)
 		echo "DO-Bootstrap: Flashing RAW XZ Image..."
 		parted -s /dev/vda mklabel msdos # "Wipe Disk"
-		wget -qO- "${IMAGEURL}" | pv | unxz -c | dd of=/dev/vda
+		curl -s -k -L "${IMAGEURL}" | pv | unxz -c | dd of=/dev/vda
 		# Did we crash?
 		if [ $? -eq 0 ]; then
 			flash_complete
@@ -129,7 +129,7 @@ case "${IMAGETYPE}" in
 	RAWTARXZ)
 		echo "DO-Bootstrap: Flashing RAW TAR XZ Image..."
 		parted -s /dev/vda mklabel msdos # "Wipe Disk"
-		wget -qO- "${IMAGEURL}" | pv | tar -xJf - -O | dd of=/dev/vda
+		curl -s -k -L "${IMAGEURL}" | pv | tar -xJf - -O | dd of=/dev/vda
 		# Did we crash?
 		if [ $? -eq 0 ]; then
 			flash_complete
@@ -141,7 +141,7 @@ case "${IMAGETYPE}" in
 	RAWBZ2)
 		echo "DO-Bootstrap: Flashing RAW BZ2 Image..."
 		parted -s /dev/vda mklabel msdos # "Wipe Disk"
-		wget -qO- "${IMAGEURL}" | pv | bzip2 -dc - | dd of=/dev/vda
+		curl -s -k -L "${IMAGEURL}" | pv | bzip2 -dc - | dd of=/dev/vda
 		# Did we crash?
 		if [ $? -eq 0 ]; then
 			flash_complete
@@ -174,7 +174,7 @@ case "${IMAGETYPE}" in
 
 		# Mount 2nd fs, and start the DL
 		mount /dev/vda2 /mnt
-		wget -qO- "${IMAGEURL}" | pv | dd of=/mnt/img.vhd
+		curl -s -k -L "${IMAGEURL}" | pv | dd of=/mnt/img.vhd
 
 		# Img is done, make sure our partition for this is big enough...
 		VHDIMGSIZE=`qemu-img info /mnt/img.vhd | grep "virtual size" | awk '{ print $4 }' | sed -e "s/(//g"`

@@ -45,6 +45,7 @@ find . | cpio --create --format='newc' > ../output/$1.modified.unzip
 cd ..
 gzip -c ./output/$1.modified.unzip > ./output/$1.modified
 rm ./output/$1.modified.unzip
+rm -rf ./extract
 
 # We Done
 echo "All done! :)"

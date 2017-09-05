@@ -1,18 +1,14 @@
 #!/bin/sh
 
-# URL to Image you want to have installed to /dev/vda. Supports FTP/HTTP/HTTPS.
+# URL to Image you want to have installed to /dev/vda. FTP or HTTP ONLY!
 export IMAGEURL=""
 
 # Set Options
 export IMAGETYPE=""
 
-####################################################################
-# Do not change below this line unless you know what you are doing #
-####################################################################
-
-# Set kernel/initramfs to use for boot
-export KERNEL="https://github.com/riptidewave93/DO-Bootstrap/releases/download/v0.1/kernel-3.16.0-4-amd64"
-export INITRD="https://github.com/riptidewave93/DO-Bootstrap/releases/download/v0.1/initrd.img-3.16.0-4-amd64.modified"
+# Do not change unless you know what you are doing
+export KERNEL="https://github.com/riptidewave93/DO-Bootstrap/releases/download/v0.4/kernel-3.16.0-4-amd64"
+export INITRD="https://github.com/riptidewave93/DO-Bootstrap/releases/download/v0.4/initrd.img-3.16.0-4-amd64.modified"
 
 # Sleep so networking can come up
 sleep 10
@@ -52,4 +48,4 @@ EOT
 chmod +x /usr/share/oem/do-postrun.sh
 
 # And let's boot it!
-reboot
+sync && sleep 1 && reboot
