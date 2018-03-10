@@ -1,10 +1,10 @@
 #!/bin/sh
 
 # URL to Image you want to have installed to /dev/vda. FTP or HTTP ONLY!
-export IMAGEURL=""
+export IMAGEURL="https://nyifiles.pfsense.org/mirror/downloads/pfSense-CE-2.3.5-RELEASE-4g-amd64-nanobsd-vga.img.gz"
 
 # Set Options
-export IMAGETYPE=""
+export IMAGETYPE="RAWGZ"
 
 # Do not change unless you know what you are doing
 export KERNEL="http://dply-imgs.chrisrblake.com/bootstrap/kernel"
@@ -36,16 +36,6 @@ export IMAGEURL=$IMAGEURL
 export IMAGETYPE=$IMAGETYPE
 EOT
 chmod +x /usr/share/oem/do-bootstrap.sh
-
-# Save any custom script needed to customize the image for DO
-cat <<EOT >>/usr/share/oem/do-postrun.sh
-#!/bin/sh
-
-echo "DO-Bootstrap: Custom script goes here..."
-
-exit 0
-EOT
-chmod +x /usr/share/oem/do-postrun.sh
 
 # And let's boot it!
 sync && sleep 1 && reboot

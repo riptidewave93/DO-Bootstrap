@@ -1,3 +1,0 @@
-/scripts/init-bottom/udev "$@"
-/scripts/init-bottom/do-bootstrap "$@"
-[ -e /conf/param.conf ] && . /conf/param.conf

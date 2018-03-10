@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# Start the network....
+#
+
+# Debian ifupdown needs the /run/network lock directory
+mkdir -p /run/network
+
+case "$1" in
+  start)
+		# Make sure our eth0 file exists
+		[ ! -f /tmp/eth0.int ] && touch /tmp/eth0.int
+        printf "Starting network: "
+        /sbin/ifup -a > /dev/null 2>&1
+        [ $? = 0 ] && echo "OK" || echo "FAIL"
+        ;;
+  stop)
+        printf "Stopping network: "
+        /sbin/ifdown -a > /dev/null 2>&1
+        [ $? = 0 ] && echo "OK" || echo "FAIL"
+        ;;
+  restart|reload)
+        "$0" stop
+        "$0" start
+        ;;
+  *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+esac
+
+exit $?

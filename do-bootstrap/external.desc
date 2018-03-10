@@ -1,0 +1,2 @@
+name: DO_BS
+desc: Build configuration to build an initramfs & kernel for installing disk images onto DigitalOcean Droplets.

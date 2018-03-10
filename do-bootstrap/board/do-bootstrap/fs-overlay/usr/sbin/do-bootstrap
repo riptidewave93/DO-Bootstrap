@@ -1,0 +1,223 @@
+#!/bin/bash
+#
+# DO-Bootstap script
+# Copyright (C) 2018 Chris Blake <chrisrblake93@gmail.com>
+#
+set -o pipefail
+
+flash_complete() {
+	if [ -f "/tmp/do-postrun.sh" ]; then
+		echo "DO-Bootstrap: Running do-postrun.sh..."
+		/tmp/do-postrun.sh
+	fi
+	# We done now
+	echo "DO-Bootstrap: Flashing Complete!"
+	sync
+	reboot -f
+}
+
+exit_shell() {
+	/bin/sh -i </dev/console >/dev/console 2>&1
+	exit 0
+}
+
+wipe_disk() {
+	parted -s /dev/vda mklabel msdos
+}
+
+# Start by changing the log level, and clearing all previous output
+echo 1 > /proc/sys/kernel/printk
+clear
+
+# Debug print
+echo "DO-Bootstrap: Build Version $(cat /etc/img-release)"
+
+# Verify net connectivitiy
+echo "DO-Bootstrap: Verifying networking..."
+if ! ping -c 1 8.8.8.8 &> /dev/null; then
+	echo "DO-Bootstrap: ERROR - Unable to access the internet! Dropping to a shell.";
+	exit_shell
+fi
+
+# Have we ran already?
+if [ ! -e "/tmp/do-bootstrap.sh" ]; then
+	# Mount /oem from coreOS to get our config info
+	echo "DO-Bootstrap: Mounting /oem..."
+	mount -t ext4 /dev/vda6 /mnt
+	if [ $? -ne 0 ]; then
+		echo "DO-Bootstrap: Error mounting /oem, dropping to a shell."
+		exit_shell
+	else
+		# Copy our important files to tmp so we can re-use em if needed
+		if [ -f "/mnt/do-bootstrap.sh" ]; then
+			cp /mnt/do-bootstrap.sh /tmp/do-bootstrap.sh
+			source /tmp/do-bootstrap.sh
+		else
+			echo "DO-Bootstrap: do-bootstrap.sh not found, exiting to shell..."
+			exit_shell
+		fi
+		if [ -f "/mnt/do-postrun.sh" ]; then
+			cp /mnt/do-postrun.sh /tmp/do-postrun.sh
+			chmod 755 /tmp/do-postrun.sh
+		fi
+	fi
+else
+	source /tmp/do-bootstrap.sh
+fi
+
+# Do we have a postrun script?
+if [ -f "/tmp/do-postrun.sh" ]; then
+	echo "DO-Bootstrap: do-postrun.sh found, will run after prevision!"
+fi
+
+# Are we in dev mode?
+if [ -f "/mnt/debug" ]; then
+	echo "DO-Bootstrap: Debug mode enabled, dropping to a shell."
+	exit_shell
+fi
+
+# We are done with /dev/vda6, unmount
+umount /mnt
+
+# What are we installing?
+if [ -z "${IMAGEURL}" ]; then
+	echo "DO-Bootstrap: IMAGEURL not defined, dropping to a shell."
+	exit_shell
+fi
+if [ -z "${IMAGETYPE}" ]; then
+	echo "DO-Bootstrap: IMAGETYPE not defined, assuming RAW."
+	IMAGETYPE="RAW"
+fi
+
+# Let's Do this
+echo "DO-Bootstrap: Starting Flashing process..."
+
+# Attempt to get file size so we can use an accurateish progress bar
+PVFlags=""
+IMGLENGTH=`curl -sI "${IMAGEURL}" 2>&1 | grep Content-Length | awk '{print $2}'`
+if [ ! -z "$IMGLENGTH" ]; then
+	PVFlags="-s $IMGLENGTH"
+fi
+
+# Clear the local disk for Flashing
+wipe_disk
+
+# Let's start the flashing
+case "${IMAGETYPE}" in
+	RAW)
+		echo "DO-Bootstrap: Flashing RAW Image..."
+		curl -s --retry 5 -k -L "${IMAGEURL}" | pv $PVFlags | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWGZ)
+		echo "DO-Bootstrap: Flashing RAW GZ Image..."
+		curl -s --retry 5 -k -L "${IMAGEURL}" | pv $PVFlags | gunzip -c | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWTARGZ)
+		echo "DO-Bootstrap: Flashing RAW TAR GZ Image..."
+		curl -s --retry 5 -k -L "${IMAGEURL}" | pv $PVFlags | tar -xzf - -O | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWXZ)
+		echo "DO-Bootstrap: Flashing RAW XZ Image..."
+		curl -s --retry 5 -k -L "${IMAGEURL}" | pv $PVFlags | unxz -c | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWTARXZ)
+		echo "DO-Bootstrap: Flashing RAW TAR XZ Image..."
+		curl -s --retry 5 -k -L "${IMAGEURL}" | pv $PVFlags | tar -xJf - -O | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	RAWBZ2)
+		echo "DO-Bootstrap: Flashing RAW BZ2 Image..."
+		curl -s --retry 5 -k -L "${IMAGEURL}" | pv $PVFlags | bzip2 -dc - | dd of=/dev/vda
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	VHD)
+		echo "DO-Bootstrap: Flashing VHD Image..."
+		# If we are using a VHD, we need to partition the disk into 2x blocks, one for the vhd, one for the raw. If the img is too big, then we can't do the flash
+		DISKSIZE=`fdisk -l /dev/vda | head -1 | awk '{ print $5 }'`
+		NEEDEDSPACE=`expr $IMGLENGTH \* 2`
+
+		# Can we store it?
+		if [ "${DISKSIZE}" -lt "${NEEDEDSPACE}" ]; then
+			echo "DO-Bootstrap: ERROR: Not enough space on /dev/vda to store, we need ${NEEDEDSPACE} bytes to flash this VHD, and your disk only has ${DISKSIZE}";
+			exit_shell
+		fi
+
+		# Make new MBR and partitions
+		parted -s /dev/vda mklabel msdos > /dev/null 2>&1
+		parted -s /dev/vda mkpart primary 0% 50% > /dev/null 2>&1
+		parted -s /dev/vda mkpart primary 51% 100% > /dev/null 2>&1
+		partprobe
+
+		# Format 2nd FS as ext4 so we can store our VHD on it
+		mkfs.ext4 /dev/vda2 > /dev/null 2>&1
+		sync
+
+		# Mount 2nd fs, and start the DL
+		mount /dev/vda2 /mnt
+		curl -s --retry 5 -k -L "${IMAGEURL}" | pv $PVFlags | dd of=/mnt/img.vhd
+
+		# Img is done, make sure our partition for this is big enough...
+		VHDIMGSIZE=`qemu-img info /mnt/img.vhd | grep "virtual size" | awk '{ print $4 }' | sed -e "s/(//g"`
+
+		# Can we store it?
+		if [ "${DISKSIZE}" -lt "${VHDIMGSIZE}" ]; then
+			echo "DO-Bootstrap: ERROR: Not enough space on /dev/vda to store, we need ${VHDIMGSIZE} bytes to flash this VHD, and your disk only has ${DISKSIZE}";
+			exit_shell
+		fi
+
+		# Convert and save to disk
+		qemu-img convert -f vpc -O raw /mnt/img.vhd /dev/vda
+
+		# Did we crash?
+		if [ $? -eq 0 ]; then
+			flash_complete
+		else
+			echo "DO-Bootstrap: Convert and Flashing Failed! exiting!"
+			exit_shell
+		fi
+		;;
+	*)
+		echo "DO-Bootstrap: Something went really wrong, exiting!"
+		exit_shell
+		;;
+esac
