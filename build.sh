@@ -9,7 +9,7 @@ buildenv="$ourpath/BuildEnv"
 
 # Buildroot settings
 buildroot_repo="https://github.com/buildroot/buildroot.git"
-buildroot_branch="2018.02"
+buildroot_branch="2018.02.1"
 buildroot_config="do-bootstrap_defconfig"
 
 ##############################
