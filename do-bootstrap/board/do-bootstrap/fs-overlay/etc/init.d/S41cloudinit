@@ -4,9 +4,53 @@
 # Copyright (C) 2018 Chris Blake <chrisrblake93@gmail.com>
 #
 
+# Parse out a JSON value based on given key and file
+json_get_key_value() {
+	TMP="$(jq -r .$1 $2)"
+
+	# If there is a key issue, return nothing
+	if [ $? -ne 0 ]; then
+		echo ""
+	else
+		echo $TMP
+	fi
+	unset TMP
+}
+
+# Used to get JSON array keys
+json_get_keys() {
+	TMP="$(jq -r ".$1 | to_entries[] | .key" $2)"
+
+	# If there is a key issue, return nothing
+	if [ $? -ne 0 ]; then
+		echo ""
+	else
+		echo $TMP
+	fi
+	unset TMP
+}
+
+# Used to get JSON array values
+json_get_values() {
+	TMP="$(jq -r ".$1 | to_entries[] | .value" $2)"
+
+	# If there is a key issue, return nothing
+	if [ $? -ne 0 ]; then
+		echo ""
+	else
+		echo $TMP
+	fi
+	unset TMP
+}
+
 case "$1" in
 	start)
-		echo -n "Attempting to auto-configure networking"
+		# Update kernel logging so it's easier to debug
+		echo 1 > /proc/sys/kernel/printk
+
+		# Announce ourselves to the world
+		echo -n "Attempting to auto-configure networking..."
+
 		# First bring up eth0 with a link-local IP so we can get our info
 		/usr/sbin/avahi-autoipd -c eth0
 		if [ $? != 0 ]; then
@@ -16,8 +60,8 @@ case "$1" in
 		# Verify we can get our metadata, if not, make sure we safely exit
 		counter=0
 		while true; do
-			METADATAJSON=$(wget -T 5 -q -O- http://169.254.169.254/metadata/v1.json 2> /dev/null)
-			if [ -z "$METADATAJSON" ]; then
+			METADATAJSON=$(wget -T 2 -q -O /tmp/metadata.json http://169.254.169.254/metadata/v1.json 2> /dev/null)
+			if [ ! -f "/tmp/metadata.json" ]; then
 				if [ $counter -gt 5 ]; then
 					echo -e "\nUnable to hit metadata endpoint!"
 					/usr/sbin/avahi-autoipd -k eth0
@@ -29,19 +73,22 @@ case "$1" in
 				let "counter++"
 				sleep $counter # So we increase our sleep with the counter
 			else
+				echo -n "done."
 				break
 			fi
 		done
 
 		# Configure our hostname
-		DOHOSTNAME=$(wget -qO- http://169.254.169.254/metadata/v1/hostname 2> /dev/null)
-		echo "$DOHOSTNAME" > /etc/hostname
-		echo "$DOHOSTNAME" > /proc/sys/kernel/hostname
+		DOHOSTNAME=$(json_get_key_value hostname /tmp/metadata.json)
+		if [ "$DOHOSTNAME" != "" ]; then
+			echo "$DOHOSTNAME" > /etc/hostname
+			echo "$DOHOSTNAME" > /proc/sys/kernel/hostname
+		fi
 
 		# Pull down networking configuration
-		DOIP=$(wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address 2> /dev/null)
-		DONETMASK=$(wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/netmask 2> /dev/null)
-		DOGATEWAY=$(wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/gateway 2> /dev/null)
+		DOIP=$(json_get_key_value interfaces.public[0].ipv4.ip_address /tmp/metadata.json)
+		DONETMASK=$(json_get_key_value interfaces.public[0].ipv4.netmask /tmp/metadata.json)
+		DOGATEWAY=$(json_get_key_value interfaces.public[0].ipv4.gateway /tmp/metadata.json)
 
 		# Generate our network config file for when we bring the int up properly
 		echo "auto eth0" > /tmp/eth0.int
@@ -51,10 +98,11 @@ case "$1" in
 		echo -e "\tgateway $DOGATEWAY" >> /tmp/eth0.int
 
 		# Do we have IPv6?
-		DOIP6=$(wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv6/address 2> /dev/null)
-		if [ "$DOIP6" != "not found" ]; then
-			DOCIDR6=$(wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv6/cidr 2> /dev/null)
-			DOGATEWAY6=$(wget -qO- http://169.254.169.254/metadata/v1/interfaces/public/0/ipv6/gateway 2> /dev/null)
+		DOV6EN=$(json_get_key_value interfaces.public[0].ipv6 /tmp/metadata.json)
+		if [ "$DOV6EN" != "null" ]; then
+			DOIP6=$(json_get_key_value interfaces.public[0].ipv6.address /tmp/metadata.json)
+			DOCIDR6=$(json_get_key_value interfaces.public[0].ipv6.cidr /tmp/metadata.json)
+			DOGATEWAY6=$(json_get_key_value interfaces.public[0].ipv6.gateway /tmp/metadata.json)
 			echo -e "iface eth0 inet6 static" >> /tmp/eth0.int
 			echo -e "\taddress $DOIP6" >> /tmp/eth0.int
 			echo -e "\tnetmask $DOCIDR6" >> /tmp/eth0.int
@@ -64,11 +112,13 @@ case "$1" in
 		# Config DNS
 		while read -r line; do
     		echo "nameserver $line" >> /etc/resolv.conf
-		done <<< "$(wget -qO- http://169.254.169.254/metadata/v1/dns/nameservers 2> /dev/null)"
+		done <<< "$(json_get_values dns.nameservers /tmp/metadata.json)"
 
 		# Configure SSH keys
 		mkdir -p /root/.ssh
-		wget -qO /root/.ssh/authorized_keys http://169.254.169.254/metadata/v1/public-keys 2> /dev/null
+		while read -r line; do
+    		echo "$line" >> /root/.ssh/authorized_keys
+		done <<< "$(json_get_values public-keys /tmp/metadata.json)"
 		chmod 700 /root/.ssh
 		chmod -R 600 /root/.ssh/*
 

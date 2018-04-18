@@ -2,7 +2,7 @@
 
 DO-Bootstrap is a platform for installing custom Operating Systems/Images on DigitalOcean droplets via using the user-data option to boot a custom environment to flash disk images. Examples of user-data scripts can be found in the `./example-userscripts` folder.
 
-Note that this repo is currently based on [Buildroot 2018.02](https://github.com/buildroot/buildroot/tree/2018.02).
+Note that this repo is currently based on [Buildroot 2018.02.1](https://github.com/buildroot/buildroot/tree/2018.02.1).
 
 ## Building
 
@@ -19,6 +19,13 @@ Note that this repo is currently based on [Buildroot 2018.02](https://github.com
   ```
 
 Note that this will build and output your images to `./output`. You can then boot the provided kernel and initrd to enter the DO-Bootstrap environment.
+
+## Usage
+
+	1. Create a CoreOS droplet on DigitalOcean
+	2. Update GRUB to boot your DO-Bootstrap kernel & initrmfs. Examples in ./example-userscripts for automation using user-data.
+	3. Reboot the droplet
+	4. Enjoy DO-Bootstrap!
 
 ## To-Do
  * Re-verify all image types work

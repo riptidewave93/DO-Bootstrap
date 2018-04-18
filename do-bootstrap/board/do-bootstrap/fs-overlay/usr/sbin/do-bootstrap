@@ -25,8 +25,7 @@ wipe_disk() {
 	parted -s /dev/vda mklabel msdos
 }
 
-# Start by changing the log level, and clearing all previous output
-echo 1 > /proc/sys/kernel/printk
+# Clear all previous output
 clear
 
 # Debug print
