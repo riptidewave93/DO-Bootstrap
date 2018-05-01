@@ -17,32 +17,6 @@ json_get_key_value() {
 	unset TMP
 }
 
-# Used to get JSON array keys
-json_get_keys() {
-	TMP="$(jq -r ".$1 | to_entries[] | .key" $2)"
-
-	# If there is a key issue, return nothing
-	if [ $? -ne 0 ]; then
-		echo ""
-	else
-		echo $TMP
-	fi
-	unset TMP
-}
-
-# Used to get JSON array values
-json_get_values() {
-	TMP="$(jq -r ".$1 | to_entries[] | .value" $2)"
-
-	# If there is a key issue, return nothing
-	if [ $? -ne 0 ]; then
-		echo ""
-	else
-		echo $TMP
-	fi
-	unset TMP
-}
-
 case "$1" in
 	start)
 		# Update kernel logging so it's easier to debug
@@ -111,14 +85,14 @@ case "$1" in
 
 		# Config DNS
 		while read -r line; do
-    		echo "nameserver $line" >> /etc/resolv.conf
-		done <<< "$(json_get_values dns.nameservers /tmp/metadata.json)"
+			echo "nameserver $line" >> /etc/resolv.conf
+		done <<< $(jq -r ".dns.nameservers | to_entries[] | .value" /tmp/metadata.json)
 
 		# Configure SSH keys
 		mkdir -p /root/.ssh
 		while read -r line; do
-    		echo "$line" >> /root/.ssh/authorized_keys
-		done <<< "$(json_get_values public-keys /tmp/metadata.json)"
+			echo "$line" >> /root/.ssh/authorized_keys
+		done <<< $(jq -r ".public_keys | to_entries[] | .value" /tmp/metadata.json)
 		chmod 700 /root/.ssh
 		chmod -R 600 /root/.ssh/*
 
