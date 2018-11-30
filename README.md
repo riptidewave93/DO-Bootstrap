@@ -2,7 +2,7 @@
 
 DO-Bootstrap is a platform for installing custom Operating Systems/Images on DigitalOcean droplets via using the user-data option to boot a custom environment to flash disk images. Examples of user-data scripts can be found in the `./example-userscripts` folder.
 
-Note that this repo is currently based on [Buildroot 2018.02.1](https://github.com/buildroot/buildroot/tree/2018.02.1).
+Note that this repo is currently based on [Buildroot 2018.11-rc3](https://github.com/buildroot/buildroot/tree/2018.11-rc3).
 
 ## Building
 
